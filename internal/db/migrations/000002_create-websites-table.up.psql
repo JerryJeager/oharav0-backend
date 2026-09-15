@@ -1,0 +1,5 @@
+CREATE TABLE IF NOT EXISTS websites(
+    id BIGSERIAL PRIMARY KEY,
+    url VARCHAR,
+    name VARCHAR
+);
