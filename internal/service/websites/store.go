@@ -3,7 +3,9 @@ package websites
 import (
 	"context"
 
+	"github.com/JerryJeager/raglearn/config"
 	"github.com/JerryJeager/raglearn/internal/models"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 )
 
@@ -12,6 +14,7 @@ type WebsiteStore interface {
 	GetWebsites(ctx context.Context) (*models.WebsiteList, error)
 	DeleteWebsite(ctx context.Context, websiteID int) error
 	GetWebsite(ctx context.Context, websiteID int) (*models.Website, error)
+	UpdateWebsiteStatus(websiteID uuid.UUID, status string) error
 }
 
 type WebsiteRepo struct {
@@ -44,4 +47,12 @@ func (r *WebsiteRepo) GetWebsite(ctx context.Context, websiteID int) (*models.We
 
 func (r *WebsiteRepo) DeleteWebsite(ctx context.Context, websiteID int) error {
 	return r.client.WithContext(ctx).Delete(&models.Website{}, websiteID).Error
+}
+
+func (r *WebsiteRepo) UpdateWebsiteStatus(websiteID uuid.UUID, status string) error {
+	return r.client.Model(&models.Website{}).Where("id = ?", websiteID).Update("status", status).Error
+}
+
+func UpdateWebsiteStatus(websiteID uuid.UUID, status string) error {
+	return config.Session.Model(&models.Website{}).Where("id = ?", websiteID).Update("status", status).Error
 }

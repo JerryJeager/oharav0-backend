@@ -4,13 +4,15 @@ import (
 	"context"
 
 	"github.com/JerryJeager/raglearn/internal/models"
+	"github.com/google/uuid"
 )
 
 type WebsiteSv interface {
-	CreateWebsite(ctx context.Context, website *models.Website) error
+	CreateWebsite(ctx context.Context, website *models.Website) (uuid.UUID, error)
 	GetWebsites(ctx context.Context) (*models.WebsiteList, error)
 	GetWebsite(ctx context.Context, websiteID int) (*models.Website, error)
 	DeleteWebsite(ctx context.Context, websiteID int) error
+	UpdateWebsiteStatus(websiteID uuid.UUID, status string) error
 }
 
 type WebsiteServ struct {
@@ -21,8 +23,10 @@ func NewWebsiteService(repo WebsiteStore) *WebsiteServ {
 	return &WebsiteServ{repo: repo}
 }
 
-func (s *WebsiteServ) CreateWebsite(ctx context.Context, website *models.Website) error {
-	return s.repo.CreateWebsite(ctx, website)
+func (s *WebsiteServ) CreateWebsite(ctx context.Context, website *models.Website) (uuid.UUID, error) {
+	id := uuid.New()
+	website.ID = id
+	return id, s.repo.CreateWebsite(ctx, website)
 }
 
 func (s *WebsiteServ) GetWebsites(ctx context.Context) (*models.WebsiteList, error) {
@@ -35,4 +39,8 @@ func (s *WebsiteServ) GetWebsite(ctx context.Context, websiteID int) (*models.We
 
 func (s *WebsiteServ) DeleteWebsite(ctx context.Context, websiteID int) error {
 	return s.repo.DeleteWebsite(ctx, websiteID)
+}
+
+func (s *WebsiteServ) UpdateWebsiteStatus(websiteID uuid.UUID, status string) error{
+	return s.repo.UpdateWebsiteStatus(websiteID, status)
 }

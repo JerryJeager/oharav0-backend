@@ -1,7 +1,6 @@
 package http
 
 import (
-	"fmt"
 	"log"
 	"math/rand"
 	"net/http"
@@ -20,6 +19,7 @@ import (
 	"github.com/go-rod/rod/lib/launcher"
 	"github.com/go-rod/rod/lib/proto"
 	"github.com/gocolly/colly/v2"
+	"github.com/google/uuid"
 	"golang.org/x/net/html"
 )
 
@@ -38,7 +38,6 @@ var userAgents = []string{
 	"Mozilla/5.0 (iPhone; CPU iPhone OS 17_3_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/122.0.6261.89 Mobile/15E148 Safari/604.1",
 }
 
-
 var blockElements = map[string]bool{
 	"p": true, "div": true, "br": true, "li": true,
 	"h1": true, "h2": true, "h3": true, "h4": true, "h5": true, "h6": true,
@@ -46,7 +45,6 @@ var blockElements = map[string]bool{
 	"blockquote": true, "pre": true, "ul": true, "ol": true, "header": true,
 	"footer": true, "main": true,
 }
-
 
 var tagsToSkip = map[string]bool{
 	"script": true, "style": true, "noscript": true, "svg": true,
@@ -70,36 +68,16 @@ func (c *WebsiteController) CreateWebsite(ctx *gin.Context) {
 		return
 	}
 
-	content := extractCleanText(rawHTML)
-
-	//switch to rod if content is less than 200 chars--assuming page is probably an SPA(react, angular, next...) to load the full content
-	const spaThreshold = 200
-	if len(strings.TrimSpace(content)) < spaThreshold {
-		log.Println("colly result looks like an SPA shell, falling back to rod")
-		renderedHTML, rodErr := fetchWithRod(website.Url)
-		if rodErr != nil {
-			ctx.JSON(http.StatusBadGateway, gin.H{
-				"error": fmt.Sprintf("colly returned thin content and rod fallback failed: %v", rodErr),
-			})
-			return
-		}
-		content = extractCleanText(renderedHTML)
-	}
-
-	if strings.TrimSpace(content) == "" {
-		ctx.JSON(http.StatusUnprocessableEntity, gin.H{
-			"error": "could not extract any readable content from this site",
+	websiteID, err := c.serv.CreateWebsite(ctx, &website)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{
+			"error": err.Error(),
 		})
 		return
 	}
 
-	// TODO: c.serv.CreateWebsite(ctx, &website)
-	// TODO: chunk `content`, embed, store in pgvector — ideally async,
-	// kick this off as a background job and return 202 with a status you can poll.
+	go saveContentEmbedding(websiteID, website.Url, rawHTML)
 
-	ctx.JSON(http.StatusCreated, gin.H{
-		"body": content,
-	})
 }
 
 // fetchWithColly does a fast plain HTTP fetch. Good for static/SSR sites.
@@ -230,6 +208,28 @@ func normalizeWhitespace(s string) string {
 	s = reMultiSpace.ReplaceAllString(s, " ")
 	s = reMultiNewline.ReplaceAllString(s, "\n\n")
 	return strings.TrimSpace(s)
+}
+
+func saveContentEmbedding(websiteID uuid.UUID, websiteUrl, rawHTML string) {
+	content := extractCleanText(rawHTML)
+
+	//switch to rod if content is less than 200 chars--assuming page is probably an SPA(react, angular, next...) to load the full content
+	const spaThreshold = 200
+	if len(strings.TrimSpace(content)) < spaThreshold {
+		log.Println("colly result looks like an SPA shell, falling back to rod")
+		renderedHTML, rodErr := fetchWithRod(websiteUrl)
+		if rodErr != nil {
+			_ = websites.UpdateWebsiteStatus(websiteID, "failed")
+			return
+		}
+		content = extractCleanText(renderedHTML)
+	}
+
+	if strings.TrimSpace(content) == "" {
+		_ = websites.UpdateWebsiteStatus(websiteID, "failed")
+		return
+	}
+
 }
 
 func (c *WebsiteController) GetWebsite(ctx *gin.Context) {
