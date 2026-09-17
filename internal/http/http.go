@@ -7,7 +7,7 @@ type UserIdPP struct {
 }
 
 type WebsiteIDPP struct{
-	WebsiteID int `uri:"website_id" binding:"required"`
+	WebsiteID string `uri:"website_id" binding:"required,uuid_rfc4122"`
 }
 
 func GetUserID(ctx context.Context) (string, error) {

@@ -12,6 +12,7 @@ import (
 
 	// readability "codeberg.org/readeck/go-readability/v2"
 	"github.com/JerryJeager/raglearn/internal/models"
+	"github.com/JerryJeager/raglearn/internal/service/documents"
 	"github.com/JerryJeager/raglearn/internal/service/websites"
 	"github.com/PuerkitoBio/goquery"
 	"github.com/gin-gonic/gin"
@@ -62,12 +63,6 @@ func (c *WebsiteController) CreateWebsite(ctx *gin.Context) {
 		return
 	}
 
-	rawHTML, err := fetchWithColly(website.Url)
-	if err != nil {
-		ctx.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
-		return
-	}
-
 	websiteID, err := c.serv.CreateWebsite(ctx, &website)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{
@@ -76,7 +71,11 @@ func (c *WebsiteController) CreateWebsite(ctx *gin.Context) {
 		return
 	}
 
-	go saveContentEmbedding(websiteID, website.Url, rawHTML)
+	go saveContentEmbedding(websiteID, website.Url)
+
+	ctx.JSON(http.StatusAccepted, gin.H{
+		"website_id": websiteID,
+	})
 
 }
 
@@ -210,7 +209,18 @@ func normalizeWhitespace(s string) string {
 	return strings.TrimSpace(s)
 }
 
-func saveContentEmbedding(websiteID uuid.UUID, websiteUrl, rawHTML string) {
+func saveContentEmbedding(websiteID uuid.UUID, websiteUrl string) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("panic in saveContentEmbedding for %s: %v", websiteID, r)
+			_ = websites.UpdateWebsiteStatus(websiteID, "failed")
+		}
+	}()
+	
+	rawHTML, err := fetchWithColly(websiteUrl)
+	if err != nil {
+		log.Printf("colly fetch failed for %s: %v", websiteID, err)
+	}
 	content := extractCleanText(rawHTML)
 
 	//switch to rod if content is less than 200 chars--assuming page is probably an SPA(react, angular, next...) to load the full content
@@ -220,6 +230,7 @@ func saveContentEmbedding(websiteID uuid.UUID, websiteUrl, rawHTML string) {
 		renderedHTML, rodErr := fetchWithRod(websiteUrl)
 		if rodErr != nil {
 			_ = websites.UpdateWebsiteStatus(websiteID, "failed")
+			log.Printf("failed to fetch site contents-> id: %s", websiteID.String())
 			return
 		}
 		content = extractCleanText(renderedHTML)
@@ -227,9 +238,18 @@ func saveContentEmbedding(websiteID uuid.UUID, websiteUrl, rawHTML string) {
 
 	if strings.TrimSpace(content) == "" {
 		_ = websites.UpdateWebsiteStatus(websiteID, "failed")
+		log.Printf("failed to fetch site contents-> id: %s", websiteID.String())
 		return
 	}
 
+	err = documents.ChunkAndEmbedDocument(content, websiteID)
+	if err != nil {
+		log.Printf("failed to fetch site contents-> id: %s", websiteID.String())
+		return
+	}
+
+	_ = websites.UpdateWebsiteStatus(websiteID, "success")
+	log.Printf("successfully chunked, embedded and saved site data-> id: %s", websiteID.String())
 }
 
 func (c *WebsiteController) GetWebsite(ctx *gin.Context) {
@@ -241,7 +261,7 @@ func (c *WebsiteController) GetWebsite(ctx *gin.Context) {
 		return
 	}
 
-	website, err := c.serv.GetWebsite(ctx, websiteID.WebsiteID)
+	website, err := c.serv.GetWebsite(ctx, uuid.MustParse(websiteID.WebsiteID))
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{
 			"error": err,
@@ -261,7 +281,7 @@ func (c *WebsiteController) DeleteWebsite(ctx *gin.Context) {
 		return
 	}
 
-	err := c.serv.DeleteWebsite(ctx, websiteID.WebsiteID)
+	err := c.serv.DeleteWebsite(ctx, uuid.MustParse(websiteID.WebsiteID))
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{
 			"error": err,

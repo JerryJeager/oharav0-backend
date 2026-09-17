@@ -12,8 +12,8 @@ import (
 type WebsiteStore interface {
 	CreateWebsite(ctx context.Context, website *models.Website) error
 	GetWebsites(ctx context.Context) (*models.WebsiteList, error)
-	DeleteWebsite(ctx context.Context, websiteID int) error
-	GetWebsite(ctx context.Context, websiteID int) (*models.Website, error)
+	DeleteWebsite(ctx context.Context, websiteID uuid.UUID) error
+	GetWebsite(ctx context.Context, websiteID uuid.UUID) (*models.Website, error)
 	UpdateWebsiteStatus(websiteID uuid.UUID, status string) error
 }
 
@@ -37,7 +37,7 @@ func (r *WebsiteRepo) GetWebsites(ctx context.Context) (*models.WebsiteList, err
 	return &websiteList, nil
 }
 
-func (r *WebsiteRepo) GetWebsite(ctx context.Context, websiteID int) (*models.Website, error) {
+func (r *WebsiteRepo) GetWebsite(ctx context.Context, websiteID uuid.UUID) (*models.Website, error) {
 	var website models.Website
 	if err := r.client.WithContext(ctx).First(&website, "id = ?", websiteID).Error; err != nil {
 		return nil, err
@@ -45,7 +45,7 @@ func (r *WebsiteRepo) GetWebsite(ctx context.Context, websiteID int) (*models.We
 	return &website, nil
 }
 
-func (r *WebsiteRepo) DeleteWebsite(ctx context.Context, websiteID int) error {
+func (r *WebsiteRepo) DeleteWebsite(ctx context.Context, websiteID uuid.UUID) error {
 	return r.client.WithContext(ctx).Delete(&models.Website{}, websiteID).Error
 }
 

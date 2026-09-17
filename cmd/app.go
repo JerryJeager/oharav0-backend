@@ -34,7 +34,7 @@ func ExecuteApiRoutes() {
 	users.POST("/login", userController.Login)
 
 	documents.GET("/embed", documentController.EmbedDocument)
-	documents.GET("/query", documentController.QueryDocument)
+	documents.GET("/query/:website_id", documentController.QueryDocument)
 	documents.GET("/chunk", documentController.ChunkDocument)
 
 	websites.POST("", websiteController.CreateWebsite)

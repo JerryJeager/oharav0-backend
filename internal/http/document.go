@@ -6,6 +6,7 @@ import (
 	"github.com/JerryJeager/raglearn/internal/models"
 	"github.com/JerryJeager/raglearn/internal/service/documents"
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 )
 
 type DocumentController struct {
@@ -17,7 +18,7 @@ func NewDocumentController(serv documents.DocumentSv) *DocumentController {
 }
 
 func (c *DocumentController) EmbedDocument(ctx *gin.Context) {
-	var content models.Documents
+	var content models.Document
 	if err := ctx.ShouldBindJSON(&content); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{
 			"error": err.Error(),
@@ -37,6 +38,15 @@ func (c *DocumentController) EmbedDocument(ctx *gin.Context) {
 }
 
 func (c *DocumentController) QueryDocument(ctx *gin.Context) {
+	var websiteID WebsiteIDPP
+	if err := ctx.ShouldBindUri(&websiteID); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	websiteId := uuid.MustParse(websiteID.WebsiteID)
 	var query models.Query
 	if err := ctx.ShouldBindJSON(&query); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{
@@ -45,7 +55,7 @@ func (c *DocumentController) QueryDocument(ctx *gin.Context) {
 		return
 	}
 
-	response, err := c.serv.QueryDocument(ctx, &query)
+	response, err := c.serv.QueryWebsiteDocument(ctx, websiteId, &query)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{
 			"error": err.Error(),

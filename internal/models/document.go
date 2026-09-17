@@ -1,10 +1,13 @@
 package models
 
-import "github.com/pgvector/pgvector-go"
+import (
+	"github.com/google/uuid"
+	"github.com/pgvector/pgvector-go"
+)
 
-type Documents struct {
+type Document struct {
 	ID        int             `json:"id"`
-	WebsiteID int             `json:"website_id"`
+	WebsiteID uuid.UUID       `json:"website_id"`
 	Content   string          `json:"content" binding:"required"`
 	Embedding pgvector.Vector `json:"embedding"`
 }
@@ -17,7 +20,7 @@ type QueryDocument struct {
 
 type QueryDocumentList []QueryDocument
 
-type DocumentsList []Documents
+type DocumentsList []Document
 
 type Query struct {
 	Query string `json:"query" binding:"required"`
