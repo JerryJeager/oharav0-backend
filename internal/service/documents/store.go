@@ -58,13 +58,13 @@ func (r *DocumentRepo) GetDocumentChunks(ctx context.Context, embedding pgvector
 
 func (r *DocumentRepo) GetDocumentChunksForQuery(ctx context.Context, websiteID uuid.UUID, embedding pgvector.Vector) (*models.QueryDocumentList, error) {
 	var documentList models.QueryDocumentList
-	// 	-- equivalent to similarity > 0.7 (1 - 0.7)
+	// 	-- equivalent to similarity > 0.6 (1 - 0.6)
 	query := `
 		SELECT id, content, 1 - (embedding <=> ?) AS similarity
 		FROM documents
-		WHERE website_id = ? AND embedding <=> ? < 0.3
+		WHERE website_id = ? AND embedding <=> ? < 0.4
 		ORDER BY embedding <=> ? ASC
-		LIMIT 2;
+		LIMIT 3;
 
 	`
 

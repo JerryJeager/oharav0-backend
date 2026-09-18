@@ -2,10 +2,13 @@ package documents
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 
+	"github.com/JerryJeager/raglearn/config"
 	"github.com/JerryJeager/raglearn/internal/models"
+	"github.com/JerryJeager/raglearn/internal/service/websites"
 	"github.com/JerryJeager/raglearn/internal/utils"
 	"github.com/google/uuid"
 	"github.com/pgvector/pgvector-go"
@@ -27,34 +30,52 @@ func NewDocumentService(repo DocumentStore) *DocumentServ {
 	return &DocumentServ{repo: repo}
 }
 
-func ChunkAndEmbedDocument(content string, websiteID uuid.UUID) error {
-	ctx := context.Background()
-	client, err := genai.NewClient(ctx, nil)
-	if err != nil {
-		return err
+func ChunkAndEmbedDocument(content string, title string, websiteID uuid.UUID) error {
+	if title == "" {
+		title = "none"
 	}
 
 	chunks := utils.ChunkByFixedSizeWithOverlap(content, 1000, 200)
 	var documents []models.Document
-
+	var contents []*genai.Content
 	for _, chunk := range chunks {
-		var newDoc models.Document
-		contents := []*genai.Content{
-			genai.NewContentFromText(chunk, genai.RoleUser),
-		}
-		result, err := client.Models.EmbedContent(ctx,
-			"gemini-embedding-2",
-			contents,
-			nil,
+		embeddingInput := fmt.Sprintf("title: %s | text: %s", title, chunk)
+		contents = append(contents,
+			genai.NewContentFromText(embeddingInput, genai.RoleUser),
 		)
-		if err != nil {
-			log.Printf("failed to embed chunk: %s\n error: %s", chunk, err.Error())
-			continue
-		}
-		newDoc.Content = chunk
-		newDoc.Embedding = pgvector.NewVector(result.Embeddings[0].Values)
+	}
+
+	ctx := context.Background()
+
+	result, err := config.AI.Models.EmbedContent(ctx,
+		"gemini-embedding-2",
+		contents,
+		nil,
+	)
+	if err != nil {
+		log.Printf("failed to embed chunk=> error: %s", err.Error())
+		return err
+	}
+
+	if len(result.Embeddings) != len(chunks) {
+		return fmt.Errorf(
+			"embedding count mismatch: got %d embeddings for %d chunks",
+			len(result.Embeddings),
+			len(chunks),
+		)
+	}
+
+	for i, emb := range result.Embeddings {
+		var newDoc models.Document
+		newDoc.Content = chunks[i]
+		newDoc.Embedding = pgvector.NewVector(emb.Values)
 		newDoc.WebsiteID = websiteID
 		documents = append(documents, newDoc)
+	}
+	if len(documents) == 0 {
+		_ = websites.UpdateWebsiteStatus(websiteID, "failed")
+		log.Printf("all chunks failed to embed for website %s", websiteID)
+		return errors.New("no chunks were successfully embedded")
 	}
 
 	return CreateDocuments(&documents)
@@ -150,15 +171,12 @@ func (s *DocumentServ) QueryDocument(ctx context.Context, query *models.Query) (
 
 func (s *DocumentServ) QueryWebsiteDocument(ctx context.Context, websiteID uuid.UUID, query *models.Query) (string, error) {
 	queryContext := "no available relevant data" //default context
-	client, err := genai.NewClient(ctx, nil)
-	if err != nil {
-		return "", err
-	}
 
+	embeddingInput := fmt.Sprintf("task: question answering | query: %s", query.Query)
 	contents := []*genai.Content{
-		genai.NewContentFromText(query.Query, genai.RoleUser),
+		genai.NewContentFromText(embeddingInput, genai.RoleUser),
 	}
-	result, err := client.Models.EmbedContent(ctx,
+	result, err := config.AI.Models.EmbedContent(ctx,
 		"gemini-embedding-2",
 		contents,
 		nil,
@@ -200,7 +218,7 @@ func (s *DocumentServ) QueryWebsiteDocument(ctx context.Context, websiteID uuid.
 		genai.NewContentFromText(prompt, genai.RoleUser),
 	}
 
-	response, err := client.Models.GenerateContent(
+	response, err := config.AI.Models.GenerateContent(
 		ctx,
 		"gemini-3.7-flash",
 		contents,

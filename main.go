@@ -11,6 +11,7 @@ import (
 func init() {
 	config.LoadEnv()
 	config.ConnectToDB()
+	config.NewAIClient()
 }
 
 func main() {

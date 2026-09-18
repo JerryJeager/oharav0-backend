@@ -1,11 +1,13 @@
 package config
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
 
 	"github.com/joho/godotenv"
+	"google.golang.org/genai"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -15,6 +17,8 @@ var Session *gorm.DB
 func GetSession() *gorm.DB {
 	return Session
 }
+
+var AI *genai.Client
 
 func ConnectToDB() {
 	environment := os.Getenv("ENVIRONMENT")
@@ -45,6 +49,15 @@ func ConnectToDB() {
 	if Session != nil {
 		log.Print("success: created db session")
 	}
+}
+
+func NewAIClient() {
+	ctx := context.Background()
+	client, err := genai.NewClient(ctx, nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+	AI = client
 }
 
 func LoadEnv() {

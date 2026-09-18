@@ -1,6 +1,7 @@
 package http
 
 import (
+	"fmt"
 	"log"
 	"math/rand"
 	"net/http"
@@ -209,6 +210,41 @@ func normalizeWhitespace(s string) string {
 	return strings.TrimSpace(s)
 }
 
+func fetchContentWithRetry(url string, maxAttempts int) (string, error) {
+	var lastErr error
+	const spaThreshold = 200
+
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		rawHTML, collyErr := fetchWithColly(url)
+		content := extractCleanText(rawHTML)
+
+		if collyErr == nil && len(strings.TrimSpace(content)) >= spaThreshold {
+			return content, nil
+		}
+
+		log.Printf("attempt %d/%d: colly insufficient for %s (err: %v), trying rod",
+			attempt, maxAttempts, url, collyErr)
+
+		renderedHTML, rodErr := fetchWithRod(url)
+		if rodErr == nil {
+			if renderedContent := extractCleanText(renderedHTML); strings.TrimSpace(renderedContent) != "" {
+				return renderedContent, nil
+			}
+			rodErr = fmt.Errorf("rod returned no extractable content")
+		}
+
+		lastErr = fmt.Errorf("attempt %d: colly err: %v, rod err: %v", attempt, collyErr, rodErr)
+
+		if attempt < maxAttempts {
+			backoff := time.Duration(attempt) * 3 * time.Second
+			log.Printf("attempt %d failed for %s, retrying in %v", attempt, url, backoff)
+			time.Sleep(backoff)
+		}
+	}
+
+	return "", lastErr
+}
+
 func saveContentEmbedding(websiteID uuid.UUID, websiteUrl string) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -216,33 +252,15 @@ func saveContentEmbedding(websiteID uuid.UUID, websiteUrl string) {
 			_ = websites.UpdateWebsiteStatus(websiteID, "failed")
 		}
 	}()
-	
-	rawHTML, err := fetchWithColly(websiteUrl)
+
+	content, err := fetchContentWithRetry(websiteUrl, 2)
 	if err != nil {
-		log.Printf("colly fetch failed for %s: %v", websiteID, err)
-	}
-	content := extractCleanText(rawHTML)
-
-	//switch to rod if content is less than 200 chars--assuming page is probably an SPA(react, angular, next...) to load the full content
-	const spaThreshold = 200
-	if len(strings.TrimSpace(content)) < spaThreshold {
-		log.Println("colly result looks like an SPA shell, falling back to rod")
-		renderedHTML, rodErr := fetchWithRod(websiteUrl)
-		if rodErr != nil {
-			_ = websites.UpdateWebsiteStatus(websiteID, "failed")
-			log.Printf("failed to fetch site contents-> id: %s", websiteID.String())
-			return
-		}
-		content = extractCleanText(renderedHTML)
-	}
-
-	if strings.TrimSpace(content) == "" {
+		log.Println(err.Error())
 		_ = websites.UpdateWebsiteStatus(websiteID, "failed")
-		log.Printf("failed to fetch site contents-> id: %s", websiteID.String())
 		return
 	}
 
-	err = documents.ChunkAndEmbedDocument(content, websiteID)
+	err = documents.ChunkAndEmbedDocument(content, websiteUrl, websiteID)
 	if err != nil {
 		log.Printf("failed to fetch site contents-> id: %s", websiteID.String())
 		return
